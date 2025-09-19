@@ -1,9 +1,0 @@
-{
-  "renderMode": "ScreenSpaceOverlay",
-  "scaler": "ScaleWithScreenSize",
-  "referenceResolution": {
-    "x": 1920,
-    "y": 1080
-  },
-  "matchMode": "MatchWidthOrHeight"
-}
