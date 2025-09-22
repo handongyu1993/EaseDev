@@ -13,9 +13,42 @@
       "Bash(git add:*)",
       "Bash(git push:*)",
       "Bash(while read meta)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(git commit:*)",
+      "Bash(/Applications/Unity/Unity.app/Contents/MacOS/Unity -batchmode -quit -logFile - -executeMethod UnityEditor.EditorApplication.ExecuteMenuItem -executeMethodParameter \"Assets/Reimport All\")",
+      "Read(//Applications/**)",
+      "Bash(\"/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity\" -batchmode -quit -projectPath \"/Users/handongyu/work/unity/EaseDev\" -logFile -)",
+      "Bash(echo $HOME)",
+      "Read(//Users/handongyu/Library/Application Support/Claude/**)",
+      "Bash(npm run dev:*)",
+      "Bash(cat:*)",
+      "Bash(npm install:*)",
+      "Bash(nc localhost 8765)",
+      "Read(//Users/handongyu/work/unity/TestMCPProject/Library/PackageCache/com.gamelovers.mcp-unity@4efa92ea2e/**)",
+      "Bash(lsof:*)",
+      "Read(//private/tmp/**)",
+      "Bash(git clone:*)",
+      "Read(//tmp/unity-mcp/UnityMcpBridge/Editor/Tools/**)",
+      "Read(//tmp/mcp-unity/Editor/Tools/**)",
+      "Read(//tmp/unity-mcp/UnityMcpBridge/Runtime/Serialization/**)",
+      "Read(//tmp/unity-mcp/UnityMcpBridge/Editor/Models/**)",
+      "Read(//tmp/unity-mcp/**)",
+      "Read(//tmp/mcp-unity/**)",
+      "Bash(curl:*)",
+      "Read(//Users/handongyu/.claude/**)",
+      "Read(//Users/handongyu/Library/**)",
+      "Read(//opt/homebrew/Cellar/node/23.7.0/bin/**)",
+      "mcp__unity-generator__get_unity_console_logs",
+      "Bash(timeout:*)",
+      "Bash(\"/Applications/Unity/Hub/Editor/2022.3.62f1/Unity.app/Contents/MacOS/Unity\" -batchmode -quit -projectPath \"/Users/handongyu/work/unity/EaseDev\" -executeMethod \"UnityEditor.EditorApplication.ExecuteMenuItem\" -executeMethodParameter \"Assets/Reimport All\" -logFile -)",
+      "Bash(nc:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "unity-generator"
+  ]
 }

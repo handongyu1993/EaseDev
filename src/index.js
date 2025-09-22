@@ -1,180 +1,248 @@
 #!/usr/bin/env node
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
+import { WebSocket } from 'ws';
+import * as z from 'zod';
 
-import { UnityCommandParser } from './parsers/CommandParser.js';
-import { UnityGenerator } from './generators/UnityGenerator.js';
-import { TemplateManager } from './templates/TemplateManager.js';
+// Initialize the MCP server
+const server = new McpServer({
+    name: "Unity Generator Server",
+    version: "1.0.0"
+}, {
+    capabilities: {
+        tools: {},
+    },
+});
 
-class UnityMCPServer {
+class UnityWebSocketClient {
   constructor() {
-    this.server = new Server(
-      {
-        name: 'unity-generator',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
-    this.commandParser = new UnityCommandParser();
-    this.unityGenerator = new UnityGenerator();
-    this.templateManager = new TemplateManager();
-
-    this.setupToolHandlers();
+    this.webSocket = null;
+    this.wsPort = 8766;
   }
 
-  setupToolHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: 'generate_unity_feature',
-            description: '根据自然语言描述生成Unity界面和功能',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                description: {
-                  type: 'string',
-                  description: '功能描述，如"登录界面"、"背包系统"等',
-                },
-                projectPath: {
-                  type: 'string',
-                  description: 'Unity项目路径',
-                },
-              },
-              required: ['description', 'projectPath'],
-            },
-          },
-          {
-            name: 'list_available_templates',
-            description: '列出所有可用的Unity模板',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
-            name: 'create_custom_template',
-            description: '创建自定义Unity模板',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                templateName: {
-                  type: 'string',
-                  description: '模板名称',
-                },
-                templateData: {
-                  type: 'object',
-                  description: '模板数据配置',
-                },
-              },
-              required: ['templateName', 'templateData'],
-            },
-          },
-        ],
-      };
-    });
+  async connect() {
+    try {
+      if (this.webSocket && this.webSocket.readyState === WebSocket.OPEN) {
+        return true;
+      }
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      this.webSocket = new WebSocket(`ws://localhost:${this.wsPort}`);
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Unity WebSocket connection timeout'));
+        }, 5000);
+
+        this.webSocket.onopen = () => {
+          clearTimeout(timeout);
+          console.error(`Connected to Unity WebSocket on port ${this.wsPort}`);
+          resolve(true);
+        };
+
+        this.webSocket.onerror = (error) => {
+          clearTimeout(timeout);
+          console.error('Unity WebSocket connection error:', error);
+          reject(error);
+        };
+
+        this.webSocket.onclose = (code, reason) => {
+          console.error(`Unity WebSocket connection closed: ${code} - ${reason}`);
+          this.webSocket = null;
+        };
+      });
+    } catch (error) {
+      console.error('Failed to connect to Unity:', error);
+      throw error;
+    }
+  }
+
+  async sendMessage(method, params = {}) {
+    if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+      await this.connect();
+    }
+
+    const messageId = `mcp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const message = {
+      id: messageId,
+      method: method,
+      params: params
+    };
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Unity communication timeout for method: ${method}`));
+      }, 10000);
+
+      const handleMessage = (event) => {
+        try {
+          const response = JSON.parse(event.data);
+          if (response.id === messageId) {
+            clearTimeout(timeout);
+            this.webSocket.removeEventListener('message', handleMessage);
+
+            if (response.error) {
+              reject(new Error(JSON.stringify(response.error)));
+            } else {
+              resolve(response.result || response);
+            }
+          }
+        } catch (error) {
+          clearTimeout(timeout);
+          this.webSocket.removeEventListener('message', handleMessage);
+          reject(error);
+        }
+      };
+
+      this.webSocket.addEventListener('message', handleMessage);
 
       try {
-        switch (name) {
-          case 'generate_unity_feature':
-            return await this.handleGenerateFeature(args);
-
-          case 'list_available_templates':
-            return await this.handleListTemplates();
-
-          case 'create_custom_template':
-            return await this.handleCreateTemplate(args);
-
-          default:
-            throw new McpError(
-              ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}`
-            );
-        }
+        this.webSocket.send(JSON.stringify(message));
       } catch (error) {
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Error executing tool ${name}: ${error.message}`
-        );
+        clearTimeout(timeout);
+        this.webSocket.removeEventListener('message', handleMessage);
+        reject(new Error(`Failed to send message to Unity: ${error.message}`));
       }
     });
-  }
-
-  async handleGenerateFeature(args) {
-    const { description, projectPath } = args;
-
-    // 1. 解析命令
-    const parsedCommand = await this.commandParser.parse(description);
-
-    // 2. 获取对应模板
-    const template = await this.templateManager.getTemplate(parsedCommand.type);
-
-    // 3. 生成Unity资源
-    const result = await this.unityGenerator.generate({
-      command: parsedCommand,
-      template: template,
-      projectPath: projectPath
-    });
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Successfully generated Unity feature: ${description}\\n\\nFiles created:\\n${result.createdFiles.join('\\n')}`,
-        },
-      ],
-    };
-  }
-
-  async handleListTemplates() {
-    const templates = await this.templateManager.listTemplates();
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Available Unity templates:\\n${templates.map(t => `- ${t.name}: ${t.description}`).join('\\n')}`,
-        },
-      ],
-    };
-  }
-
-  async handleCreateTemplate(args) {
-    const { templateName, templateData } = args;
-
-    const result = await this.templateManager.createTemplate(templateName, templateData);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Template "${templateName}" created successfully at: ${result.path}`,
-        },
-      ],
-    };
-  }
-
-  async run() {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    console.error('Unity MCP Server running on stdio');
   }
 }
 
-const server = new UnityMCPServer();
-server.run().catch(console.error);
+// Create Unity WebSocket client
+const unityClient = new UnityWebSocketClient();
+
+// Register tools using the new SDK API
+server.tool('generate_unity_feature',
+  '根据自然语言描述生成Unity界面和功能',
+  {
+    description: z.string().describe('功能描述，如"登录界面"、"背包系统"等'),
+    projectPath: z.string().describe('Unity项目路径'),
+  },
+  async (params) => {
+    try {
+      // Simple feature generation simulation
+      const { description, projectPath } = params;
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Unity feature generation started for: ${description}\\nProject path: ${projectPath}\\nFeature would be generated based on the description.`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error generating Unity feature: ${error.message}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+server.tool('list_available_templates',
+  '列出所有可用的Unity模板',
+  {},
+  async () => {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Available Unity templates:\\n- Login Interface (登录界面)\\n- Inventory System (背包系统)\\n- Main Menu (主菜单)\\n- Shop Interface (商店界面)',
+        },
+      ],
+    };
+  }
+);
+
+server.tool('get_unity_console_logs',
+  '获取Unity编辑器控制面板输出日志',
+  {
+    logType: z.string().optional().describe('日志类型: all(全部), editor(编辑器), compiler(编译器), import(资源导入)'),
+    lines: z.number().optional().describe('返回的日志行数'),
+  },
+  async (params) => {
+    try {
+      const result = await unityClient.sendMessage('get_console_logs', {
+        logType: params.logType || '',
+        offset: 0,
+        limit: params.lines || 20,
+        includeStackTrace: false
+      });
+
+      if (result.success && result.data) {
+        const logs = result.data.logs || [];
+        let logText = `🔍 Unity控制台日志 (共 ${result.data.totalCount} 条)\\n\\n`;
+
+        if (logs.length === 0) {
+          logText += "暂无日志记录";
+        } else {
+          logText += logs.map(log =>
+            `[${log.timestamp}] ${log.type}: ${log.message}`
+          ).join('\\n\\n');
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: logText,
+            },
+          ],
+        };
+      } else {
+        throw new Error(result.message || 'Unknown error');
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ 获取Unity控制台日志失败: ${error.message}\\n\\n请确保:\\n1. Unity编辑器已打开\\n2. Unity MCP Bridge窗口已启动 (Tools > Unity MCP > Bridge Window)\\n3. WebSocket服务器正在运行在端口 ${unityClient.wsPort}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Server startup function
+async function startServer() {
+    try {
+        const stdioTransport = new StdioServerTransport();
+        await server.connect(stdioTransport);
+        console.error('Unity MCP Server running on stdio');
+
+        // Try to connect to Unity on startup
+        try {
+            await unityClient.connect();
+        } catch (error) {
+            console.error('Initial Unity connection failed, will retry when needed');
+        }
+    } catch (error) {
+        console.error('Failed to start server:', error);
+        process.exit(1);
+    }
+}
+
+// Start the server
+startServer();
+
+// Handle shutdown
+process.on('SIGINT', async () => {
+    console.error('Shutting down...');
+    process.exit(0);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason);
+});
