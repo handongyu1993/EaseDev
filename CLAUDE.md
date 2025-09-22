@@ -81,6 +81,38 @@ Use the unity-generator tool to list all available Unity templates
 - "我想做一个红色的主菜单" (Create red-themed main menu)
 - "我想做一个竖直布局的商店界面" (Create vertical layout shop UI)
 
+### Unity MCP Bridge Commands
+
+The Unity MCP Bridge provides direct WebSocket API access to Unity Editor functionality:
+
+**Connection**: Unity MCP Bridge runs on `ws://localhost:8766` when Unity Editor is running.
+
+**Available Tools:**
+- `unity.create_gameobject` - Create GameObjects with primitives, positioning, etc.
+- `unity.update_gameobject` - Update GameObject properties
+- `unity.get_gameobject` - Get GameObject information
+- `unity.create_prefab` - Create prefabs from GameObjects
+
+**Example Usage:**
+```javascript
+// Create a cube named "test" at position (1,1,1)
+const request = {
+    id: "1",
+    method: "unity.create_gameobject",
+    params: {
+        name: "test",
+        primitiveType: "Cube",
+        position: { x: 1, y: 1, z: 1 }
+    }
+};
+```
+
+**Testing Command:**
+```bash
+# Create and run test script
+node test_mcp_create_cube.mjs
+```
+
 ## Key Unity Packages
 
 The project includes these notable packages:

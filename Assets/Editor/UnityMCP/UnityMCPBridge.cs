@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityMCP.Editor.Services;
+using UnityMCP.Tools;
 using Newtonsoft.Json.Linq;
 
 namespace UnityMCP.Editor
@@ -23,6 +24,9 @@ namespace UnityMCP.Editor
         private int serverPort = 8766;
         private List<string> logs = new List<string>();
         private Vector2 scrollPosition;
+
+        // GameLovers-style tool registry
+        private Dictionary<string, McpToolBase> mcpTools = new Dictionary<string, McpToolBase>();
         private ConsoleLogsService consoleLogsService;
         private int connectedClients = 0;
         private double lastHeartbeat = 0;
@@ -51,6 +55,9 @@ namespace UnityMCP.Editor
             // Initialize console logs service - force initialization
             consoleLogsService = ConsoleLogsService.Instance;
             Debug.Log("[UnityMCPBridge] ConsoleLogsService initialized");
+
+            // Initialize GameLovers-style tools
+            InitializeTools();
 
             // Test that the service is working
             EditorApplication.delayCall += () => {
@@ -188,8 +195,64 @@ namespace UnityMCP.Editor
                     // Extract parameters from professional MCP JObject format
                     string objectName = message.Params["name"]?.ToString() ?? "GameObject";
                     string parentName = message.Params["parent"]?.ToString();
+                    string primitiveType = message.Params["primitiveType"]?.ToString();
 
-                    var go = new GameObject(objectName);
+                    GameObject go;
+
+                    // Create primitive or empty GameObject
+                    if (!string.IsNullOrEmpty(primitiveType))
+                    {
+                        // Parse primitive type
+                        if (System.Enum.TryParse<PrimitiveType>(primitiveType, true, out var type))
+                        {
+                            // CreatePrimitive must be called on main thread - using direct call since we're already on main thread
+                            go = GameObject.CreatePrimitive(type);
+                            go.name = objectName;
+                        }
+                        else
+                        {
+                            // Invalid primitive type, create empty GameObject
+                            go = new GameObject(objectName);
+                        }
+                    }
+                    else
+                    {
+                        go = new GameObject(objectName);
+                    }
+
+                    // Set position, rotation, scale if provided
+                    if (message.Params["position"] != null)
+                    {
+                        var pos = message.Params["position"];
+                        var position = new Vector3(
+                            pos["x"]?.ToObject<float>() ?? 0f,
+                            pos["y"]?.ToObject<float>() ?? 0f,
+                            pos["z"]?.ToObject<float>() ?? 0f
+                        );
+                        go.transform.position = position;
+                    }
+
+                    if (message.Params["rotation"] != null)
+                    {
+                        var rot = message.Params["rotation"];
+                        var rotation = Quaternion.Euler(
+                            rot["x"]?.ToObject<float>() ?? 0f,
+                            rot["y"]?.ToObject<float>() ?? 0f,
+                            rot["z"]?.ToObject<float>() ?? 0f
+                        );
+                        go.transform.rotation = rotation;
+                    }
+
+                    if (message.Params["scale"] != null)
+                    {
+                        var scl = message.Params["scale"];
+                        var scale = new Vector3(
+                            scl["x"]?.ToObject<float>() ?? 1f,
+                            scl["y"]?.ToObject<float>() ?? 1f,
+                            scl["z"]?.ToObject<float>() ?? 1f
+                        );
+                        go.transform.localScale = scale;
+                    }
 
                     if (!string.IsNullOrEmpty(parentName))
                     {
@@ -203,7 +266,25 @@ namespace UnityMCP.Editor
                     var data = new JObject
                     {
                         ["objectName"] = go.name,
-                        ["instanceId"] = go.GetInstanceID()
+                        ["instanceId"] = go.GetInstanceID(),
+                        ["position"] = new JObject
+                        {
+                            ["x"] = go.transform.position.x,
+                            ["y"] = go.transform.position.y,
+                            ["z"] = go.transform.position.z
+                        },
+                        ["rotation"] = new JObject
+                        {
+                            ["x"] = go.transform.rotation.eulerAngles.x,
+                            ["y"] = go.transform.rotation.eulerAngles.y,
+                            ["z"] = go.transform.rotation.eulerAngles.z
+                        },
+                        ["scale"] = new JObject
+                        {
+                            ["x"] = go.transform.localScale.x,
+                            ["y"] = go.transform.localScale.y,
+                            ["z"] = go.transform.localScale.z
+                        }
                     };
 
                     return Response.Success($"GameObject '{go.name}' created successfully", data);
@@ -954,8 +1035,23 @@ namespace UnityMCP.Editor
 
         private async Task<T> ExecuteOnMainThread<T>(Func<T> action)
         {
-            // 直接执行，不等待主线程调度
-            return await Task.Run(() => action());
+            var tcs = new TaskCompletionSource<T>();
+
+            // 使用 EditorApplication.delayCall 确保在Unity主线程执行
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    var result = action();
+                    tcs.SetResult(result);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            };
+
+            return await tcs.Task;
         }
 
         private void AddLog(string message)
@@ -1077,78 +1173,87 @@ namespace UnityMCP.Editor
                 AddLog($"Processing method: {message.Method} with ID: {message.Id}");
 
                 JObject result = null;
-                switch (message.Method)
-                {
-                    // Professional MCP method names (matching GameLovers MCP Unity)
-                    case "get_console_logs":
-                        result = await GetConsoleLogs(message) as JObject;
-                        break;
-                    case "clear_console":
-                        result = await ClearConsole() as JObject;
-                        break;
-                    case "get_assets":
-                        result = await GetAssets(message) as JObject;
-                        break;
-                    case "get_packages":
-                        result = await GetPackages(message) as JObject;
-                        break;
-                    case "send_console_log":
-                        result = await SendConsoleLog(message) as JObject;
-                        break;
 
-                    // Legacy Unity methods (for backward compatibility)
-                    case "unity.create_scene":
-                        result = JObject.FromObject(await CreateScene(message));
-                        break;
-                    case "unity.create_gameobject":
-                        result = JObject.FromObject(await CreateGameObject(message));
-                        break;
-                    case "unity.create_ui_canvas":
-                        result = JObject.FromObject(await CreateUICanvas(message));
-                        break;
-                    case "unity.get_scene_info":
-                        result = JObject.FromObject(await GetSceneInfo());
-                        break;
-                    case "unity.execute_menu_item":
-                        result = JObject.FromObject(await ExecuteMenuItem(message));
-                        break;
-                    case "unity.select_gameobject":
-                        result = JObject.FromObject(await SelectGameObject(message));
-                        break;
-                    case "unity.update_gameobject":
-                    case "update_gameobject":
-                        result = JObject.FromObject(await UpdateGameObject(message));
-                        break;
-                    case "unity.get_gameobject":
-                    case "get_gameobject":
-                        result = JObject.FromObject(await GetGameObject(message));
-                        break;
-                    case "unity.create_prefab":
-                    case "create_prefab":
-                        result = JObject.FromObject(await CreatePrefab(message));
-                        break;
-                    case "unity.test":
-                    case "test":
-                    case "ping":
-                        result = new JObject
-                        {
-                            ["success"] = true,
-                            ["message"] = "MCP Bridge is working!",
-                            ["timestamp"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
-                        };
-                        break;
-                    default:
-                        // Professional MCP error format
-                        var errorResponse = new MCPResponse
-                        {
-                            Id = message.Id,
-                            Error = new JObject
+                // First, try to handle with GameLovers-style tools
+                if (mcpTools.ContainsKey(message.Method))
+                {
+                    var tool = mcpTools[message.Method];
+                    AddLog($"Using tool: {tool.Name}");
+
+                    if (tool.IsAsync)
+                    {
+                        // Handle async tool
+                        var tcs = new TaskCompletionSource<JObject>();
+                        tool.ExecuteAsync(message.Params, tcs);
+                        result = await tcs.Task;
+                    }
+                    else
+                    {
+                        // Handle sync tool
+                        result = tool.Execute(message.Params);
+                    }
+                }
+                else
+                {
+                    // Fall back to built-in methods for backward compatibility
+                    switch (message.Method)
+                    {
+                        // Professional MCP method names (matching GameLovers MCP Unity)
+                        case "get_console_logs":
+                            result = await GetConsoleLogs(message) as JObject;
+                            break;
+                        case "clear_console":
+                            result = await ClearConsole() as JObject;
+                            break;
+                        case "get_assets":
+                            result = await GetAssets(message) as JObject;
+                            break;
+                        case "get_packages":
+                            result = await GetPackages(message) as JObject;
+                            break;
+                        case "send_console_log":
+                            result = await SendConsoleLog(message) as JObject;
+                            break;
+
+                        // Legacy Unity methods (for backward compatibility)
+                        case "unity.create_scene":
+                            result = JObject.FromObject(await CreateScene(message));
+                            break;
+                        case "unity.create_ui_canvas":
+                            result = JObject.FromObject(await CreateUICanvas(message));
+                            break;
+                        case "unity.get_scene_info":
+                            result = JObject.FromObject(await GetSceneInfo());
+                            break;
+                        case "unity.execute_menu_item":
+                            result = JObject.FromObject(await ExecuteMenuItem(message));
+                            break;
+                        case "unity.select_gameobject":
+                            result = JObject.FromObject(await SelectGameObject(message));
+                            break;
+                        case "unity.test":
+                        case "test":
+                        case "ping":
+                            result = new JObject
                             {
-                                ["type"] = "unknown_method",
-                                ["message"] = $"Unknown method: {message.Method}"
-                            }
-                        };
-                        return SerializeMCPResponse(errorResponse);
+                                ["success"] = true,
+                                ["message"] = "MCP Bridge is working!",
+                                ["timestamp"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+                            };
+                            break;
+                        default:
+                            // Professional MCP error format
+                            var errorResponse = new MCPResponse
+                            {
+                                Id = message.Id,
+                                Error = new JObject
+                                {
+                                    ["type"] = "unknown_method",
+                                    ["message"] = $"Unknown method: {message.Method}"
+                                }
+                            };
+                            return SerializeMCPResponse(errorResponse);
+                    }
                 }
 
                 var response = new MCPResponse
@@ -1176,6 +1281,38 @@ namespace UnityMCP.Editor
                 return SerializeMCPResponse(errorResponse);
             }
         }
+
+        #region GameLovers-Style Tool Management
+
+        /// <summary>
+        /// Initialize all MCP tools based on GameLovers architecture
+        /// </summary>
+        private void InitializeTools()
+        {
+            mcpTools.Clear();
+
+            // Register all tools
+            RegisterTool(new CreateGameObjectTool());
+            RegisterTool(new UpdateGameObjectTool());
+            RegisterTool(new GetGameObjectTool());
+            RegisterTool(new CreatePrefabTool());
+
+            AddLog($"Initialized {mcpTools.Count} MCP tools");
+        }
+
+        /// <summary>
+        /// Register a tool in the tool registry
+        /// </summary>
+        private void RegisterTool(McpToolBase tool)
+        {
+            if (tool != null && !string.IsNullOrEmpty(tool.Name))
+            {
+                mcpTools[tool.Name] = tool;
+                AddLog($"Registered tool: {tool.Name}");
+            }
+        }
+
+        #endregion
 
         #endregion
     }
