@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "unity-generator": {
+      "command": "/opt/homebrew/bin/node",
+      "args": ["src/index.js"],
+      "cwd": "/Users/handongyu/work/unity/EaseDev"
+    }
+  }
+}
