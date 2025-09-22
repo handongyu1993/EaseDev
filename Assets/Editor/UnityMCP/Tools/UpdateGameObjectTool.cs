@@ -49,7 +49,7 @@ namespace UnityMCP.Tools
                 }
                 else if (!string.IsNullOrEmpty(objectPath))
                 {
-                    // Will create the GameObject if it doesn't exist
+                    // Will create the GameObject if it doesn't exist using our hierarchy creator
                     targetGameObject = GameObjectHierarchyCreator.FindOrCreateHierarchicalGameObject(objectPath);
                     identifierInfo = $"path '{objectPath}'";
                 }
