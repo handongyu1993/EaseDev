@@ -1,17 +1,14 @@
 {
     "name": "UnityMCP.Editor",
     "rootNamespace": "",
-    "references": [
-        "Unity.Nuget.Newtonsoft-Json"
-    ],
+    "references": [],
     "includePlatforms": [
         "Editor"
     ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
-    "overrideReferences": true,
+    "overrideReferences": false,
     "precompiledReferences": [
-        "websocket-sharp.dll",
         "Newtonsoft.Json.dll"
     ],
     "autoReferenced": true,

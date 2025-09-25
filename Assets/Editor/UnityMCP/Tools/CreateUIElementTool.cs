@@ -112,15 +112,15 @@ namespace UnityMCP.Tools
             GameObject canvasGO = new GameObject(name);
             Undo.RegisterCreatedObjectUndo(canvasGO, $"Create {name}");
 
-            // Add Canvas component
+            // Add Canvas component - ensure it's on top
             var canvas = canvasGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 0;
+            canvas.sortingOrder = 100; // Higher sorting order for visibility
 
-            // Add CanvasScaler component
+            // Add CanvasScaler component - optimized for mobile
             var canvasScaler = canvasGO.AddComponent<CanvasScaler>();
             canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            canvasScaler.referenceResolution = new Vector2(1920, 1080);
+            canvasScaler.referenceResolution = new Vector2(1080, 1920); // Mobile portrait
             canvasScaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             canvasScaler.matchWidthOrHeight = 0.5f;
 
@@ -163,11 +163,11 @@ namespace UnityMCP.Tools
             rectTransform.sizeDelta = new Vector2(160f, 30f);
             rectTransform.anchoredPosition = Vector2.zero;
 
-            // Add Image component for button background
+            // Add Image component for modern flat button background
             var image = buttonGO.AddComponent<Image>();
             image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
             image.type = Image.Type.Sliced;
-            image.color = Color.white;
+            image.color = new Color(0.29f, 0.565f, 0.886f, 1f); // Modern blue #4A90E2
 
             // Add Button component
             var button = buttonGO.AddComponent<Button>();
@@ -188,9 +188,10 @@ namespace UnityMCP.Tools
             var textComponent = textGO.AddComponent<Text>();
             textComponent.text = !string.IsNullOrEmpty(text) ? text : "Button";
             textComponent.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            textComponent.fontSize = 14;
-            textComponent.color = Color.black;
+            textComponent.fontSize = 18; // Larger font for mobile
+            textComponent.color = Color.white; // White text on blue background
             textComponent.alignment = TextAnchor.MiddleCenter;
+            textComponent.fontStyle = FontStyle.Bold;
 
             return buttonGO;
         }
@@ -267,16 +268,15 @@ namespace UnityMCP.Tools
                 panelGO.transform.SetParent(canvas.transform, false);
             }
 
-            // Full screen panel by default
-            rectTransform.anchorMin = Vector2.zero;
-            rectTransform.anchorMax = Vector2.one;
-            rectTransform.sizeDelta = Vector2.zero;
-            rectTransform.offsetMin = Vector2.zero;
-            rectTransform.offsetMax = Vector2.zero;
+            // Centered panel with proper size for mobile
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = Vector2.zero;
+            rectTransform.sizeDelta = new Vector2(600, 800); // Good size for mobile login
 
             var image = panelGO.AddComponent<Image>();
             image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Background.psd");
-            image.color = new Color(1f, 1f, 1f, 0.392f);
+            image.color = new Color(1f, 1f, 1f, 0.95f); // More opaque for better visibility
 
             return panelGO;
         }
